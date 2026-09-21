@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent_db_scan
+      POSTGRES_PASSWORD: agent_db_scan
+      POSTGRES_DB: agent_db_scan_test
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./testdata/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_db_scan"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
