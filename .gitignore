@@ -27,3 +27,6 @@ go.work.sum
 
 # OS cruft
 .DS_Store
+
+# GoReleaser output
+/dist/

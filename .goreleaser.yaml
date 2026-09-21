@@ -1,0 +1,38 @@
+# GoReleaser config: pushing a v* tag builds cross-platform binaries and
+# publishes them as a GitHub Release (see .github/workflows/release.yml).
+version: 2
+
+project_name: agent-db-scan
+
+builds:
+  - id: agent-db-scan
+    main: ./cmd/agent-db-scan
+    binary: agent-db-scan
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    # No ldflags: the CLI has no --version flag or version variable yet.
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: vaultkit-inc
+    name: agent-db-scan
+
+# Homebrew: add a `brews:` section here once the vaultkit-inc/homebrew-tap
+# repo exists. Publishing to it needs a token with access to that repo, not
+# just the workflow's GITHUB_TOKEN.

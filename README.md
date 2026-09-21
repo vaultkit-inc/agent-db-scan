@@ -13,9 +13,20 @@ credential over.
 
 ## Install
 
+Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are available
+on the [Releases page](https://github.com/vaultkit-inc/agent-db-scan/releases).
+Download the archive for your platform, extract it, and put `agent-db-scan` on
+your PATH. No Go toolchain needed.
+
+With Go installed, you can instead run:
+
 ```sh
 go install github.com/vaultkit-inc/agent-db-scan/cmd/agent-db-scan@latest
 ```
+
+If `agent-db-scan` isn't found after installing, make sure `$(go env GOPATH)/bin` is on your PATH:
+
+    export PATH="$PATH:$(go env GOPATH)/bin"
 
 Or from source:
 
