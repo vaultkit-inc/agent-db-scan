@@ -6,6 +6,8 @@
 --                       turn inherits from app_reader (transitive grants)
 --   * app_noinherit -- a LOGIN role granted app_admin but with NOINHERIT,
 --                       so that membership must NOT translate into access
+--   * app_owner_member -- a LOGIN role granted app_admin with INHERIT, so it
+--                       holds app_admin's owner rights on app.secrets
 --   * a PUBLIC grant on app.widgets (loose access this tool should flag)
 --   * a default privilege (ALTER DEFAULT PRIVILEGES) covering tables
 --     app_admin has not created yet
@@ -25,6 +27,12 @@ GRANT app_writer TO app_service;
 -- role explicitly does SET ROLE app_admin.
 CREATE ROLE app_noinherit LOGIN PASSWORD 'app_noinherit' NOINHERIT;
 GRANT app_admin TO app_noinherit;
+
+-- Granted app_admin WITH INHERIT. Owner rights belong to every member that
+-- inherits the owning role, so this login can DROP/ALTER/re-grant the
+-- tables app_admin owns (app.secrets) and must be reported as admin there.
+CREATE ROLE app_owner_member LOGIN PASSWORD 'app_owner_member' INHERIT;
+GRANT app_admin TO app_owner_member WITH INHERIT TRUE;
 
 -- Schema & objects -------------------------------------------------------
 

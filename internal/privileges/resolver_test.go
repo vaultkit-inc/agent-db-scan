@@ -90,6 +90,43 @@ func TestResolver_Resolve(t *testing.T) {
 		source, ok := findSource(entry.Sources, "ownership")
 		require.True(t, ok)
 		assert.Equal(t, "app_admin", source.Role)
+		assert.False(t, source.Inherited, "the login owns the object itself")
+	})
+
+	t.Run("ownership through an inherited owning role grants admin and names that role", func(t *testing.T) {
+		obj := secretsObject("app_admin")
+		in := privileges.Input{
+			Login:          "app_owner_member",
+			EffectiveRoles: []string{"app_owner_member", "app_admin"},
+			Objects:        []domain.DBObject{obj},
+		}
+
+		access, err := r.Resolve(context.Background(), in)
+		require.NoError(t, err)
+		require.Len(t, access, 1)
+
+		entry := access[0]
+		assert.Equal(t, domain.AccessAdmin, entry.Level)
+		assert.Contains(t, entry.Privileges, "TRUNCATE")
+		require.Len(t, entry.Sources, 1, "exactly one ownership source per object")
+		assert.Equal(t, "ownership", entry.Sources[0].Kind)
+		assert.Equal(t, "app_admin", entry.Sources[0].Role)
+		assert.True(t, entry.Sources[0].Inherited)
+	})
+
+	t.Run("a NOINHERIT membership in the owning role does not confer ownership", func(t *testing.T) {
+		// app_noinherit is a member of app_admin, but roles.Graph.Resolve
+		// leaves app_admin out of EffectiveRoles because of NOINHERIT.
+		obj := secretsObject("app_admin")
+		in := privileges.Input{
+			Login:          "app_noinherit",
+			EffectiveRoles: []string{"app_noinherit"},
+			Objects:        []domain.DBObject{obj},
+		}
+
+		access, err := r.Resolve(context.Background(), in)
+		require.NoError(t, err)
+		assert.Empty(t, access, "no ACL grant and no inherited ownership means no access to report")
 	})
 
 	t.Run("a direct grant to the login is recorded as a direct source", func(t *testing.T) {

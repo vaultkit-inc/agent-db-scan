@@ -72,14 +72,18 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) ([]domain.EffectiveAcc
 		var sources []domain.AccessSource
 		var privileges []string
 		hasGrantOption := false
-		isOwner := obj.Owner == in.Login
+		// Owner rights belong to the owning role and every member that
+		// inherits it; effectiveRoleSet includes the login and already
+		// excludes roles reached only through NOINHERIT.
+		isOwner := effectiveRoleSet[obj.Owner] || obj.Owner == in.Login
 
 		if isOwner {
 			privs := ownerPrivileges[obj.Kind]
 			sources = append(sources, domain.AccessSource{
-				Role:       in.Login,
+				Role:       obj.Owner,
 				Privileges: privs,
 				Kind:       "ownership",
+				Inherited:  obj.Owner != in.Login,
 			})
 			privileges = unionPrivileges(privileges, privs)
 		}

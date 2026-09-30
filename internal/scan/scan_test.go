@@ -36,6 +36,16 @@ func appServiceDSN(t *testing.T) string {
 	return "postgres://app_service:app_service@localhost:55432/agent_db_scan_test?sslmode=disable"
 }
 
+// roleDSN connects as one of the fixture's LOGIN roles (whose password is
+// its name), overridable via envVar.
+func roleDSN(t *testing.T, envVar, role string) string {
+	t.Helper()
+	if dsn := os.Getenv(envVar); dsn != "" {
+		return dsn
+	}
+	return "postgres://" + role + ":" + role + "@localhost:55432/agent_db_scan_test?sslmode=disable"
+}
+
 func findAccess(access []domain.EffectiveAccess, schema, name string) (domain.EffectiveAccess, bool) {
 	for _, a := range access {
 		if a.Object.Schema == schema && a.Object.Name == name {
@@ -83,5 +93,36 @@ func TestScan(t *testing.T) {
 		widgets, ok := findAccess(rep.Access, "app", "widgets")
 		require.True(t, ok, "app_service should have access to app.widgets via inherited app_writer grant")
 		assert.Equal(t, domain.AccessWrite, widgets.Level)
+	})
+
+	t.Run("a login inheriting the owning role is admin via ownership", func(t *testing.T) {
+		dsn := roleDSN(t, "AGENT_DB_SCAN_TEST_APP_OWNER_MEMBER_DSN", "app_owner_member")
+		rep, err := scan.Scan(context.Background(), dsn, scan.Options{SchemaFilter: "app"})
+		require.NoError(t, err)
+
+		assert.Equal(t, "app_owner_member", rep.Login)
+
+		secrets, ok := findAccess(rep.Access, "app", "secrets")
+		require.True(t, ok, "app_owner_member inherits app_admin, which owns app.secrets")
+		assert.Equal(t, domain.AccessAdmin, secrets.Level)
+		require.Len(t, secrets.Sources, 1)
+		assert.Equal(t, "ownership", secrets.Sources[0].Kind)
+		assert.Equal(t, "app_admin", secrets.Sources[0].Role)
+		assert.True(t, secrets.Sources[0].Inherited)
+	})
+
+	t.Run("a NOINHERIT member of the owning role is not reported as owner", func(t *testing.T) {
+		dsn := roleDSN(t, "AGENT_DB_SCAN_TEST_APP_NOINHERIT_DSN", "app_noinherit")
+		rep, err := scan.Scan(context.Background(), dsn, scan.Options{SchemaFilter: "app"})
+		require.NoError(t, err)
+
+		assert.Equal(t, "app_noinherit", rep.Login)
+
+		if secrets, ok := findAccess(rep.Access, "app", "secrets"); ok {
+			for _, s := range secrets.Sources {
+				assert.NotEqual(t, "ownership", s.Kind, "NOINHERIT must block app_admin's owner rights")
+			}
+			assert.NotEqual(t, domain.AccessAdmin, secrets.Level)
+		}
 	})
 }

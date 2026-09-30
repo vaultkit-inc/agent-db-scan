@@ -78,6 +78,7 @@ type AccessSource struct {
 	Role       string   // role name this source came through ("" for PUBLIC/ownership if not role-shaped)
 	Privileges []string // privileges this specific source contributes
 	Kind       string   // "direct", "inherited", "public", "ownership"
+	Inherited  bool     `json:",omitempty"` // Kind "ownership" only: Role owns the object and the login holds its rights through membership
 }
 
 // RLSPolicy mirrors one row of pg_policies — the resolved, human-readable
