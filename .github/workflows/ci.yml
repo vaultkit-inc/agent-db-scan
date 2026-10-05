@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same branch / PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # Mirrors docker-compose.yml so the tests' default DSNs
+      # (localhost:55432, agent_db_scan/agent_db_scan) work unchanged.
+      # Must stay on 16+: schema.sql uses GRANT ... WITH INHERIT TRUE.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agent_db_scan
+          POSTGRES_PASSWORD: agent_db_scan
+          POSTGRES_DB: agent_db_scan_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U agent_db_scan"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Service containers start before checkout, so they can't mount
+      # testdata/schema.sql into docker-entrypoint-initdb.d the way
+      # docker-compose does. Load the fixture with psql instead.
+      - name: Load test fixture
+        env:
+          PGPASSWORD: agent_db_scan
+        run: >-
+          psql -h localhost -p 55432 -U agent_db_scan -d agent_db_scan_test
+          -v ON_ERROR_STOP=1 -q -f testdata/schema.sql
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5
