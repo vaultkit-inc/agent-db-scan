@@ -96,3 +96,24 @@ ALTER TABLE app.audit_log FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY audit_log_admin_only ON app.audit_log
     USING (current_user = 'app_admin');
+
+-- SECURITY DEFINER, owned by the superuser that runs this script,
+-- EXECUTE left at the default (PUBLIC). The worst case.
+CREATE FUNCTION app.purge_widgets() RETURNS void
+LANGUAGE sql SECURITY DEFINER
+AS $$ DELETE FROM app.widgets $$;
+
+-- SECURITY DEFINER, owned by app_admin, search_path pinned,
+-- PUBLIC revoked, granted only to app_reader.
+CREATE FUNCTION app.rotate_secret() RETURNS void
+LANGUAGE sql SECURITY DEFINER
+SET search_path = app, pg_temp
+AS $$ SELECT 1 $$;
+ALTER FUNCTION app.rotate_secret() OWNER TO app_admin;
+REVOKE EXECUTE ON FUNCTION app.rotate_secret() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.rotate_secret() TO app_reader;
+
+-- A normal function (not SECURITY DEFINER). The reader must ignore it.
+CREATE FUNCTION app.widget_count() RETURNS bigint
+LANGUAGE sql
+AS $$ SELECT count(*) FROM app.widgets $$;
