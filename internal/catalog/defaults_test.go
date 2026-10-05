@@ -17,7 +17,7 @@ func listDefaultACLs(t *testing.T) []catalog.DefaultACLEntry {
 
 	m, err := conn.Open(context.Background(), testDSN(t))
 	require.NoError(t, err)
-	defer m.Close(context.Background())
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
 	var entries []catalog.DefaultACLEntry
 	err = m.Query(context.Background(), func(ctx context.Context, tx pgx.Tx) error {

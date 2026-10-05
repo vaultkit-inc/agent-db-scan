@@ -29,14 +29,14 @@ func TestOpen(t *testing.T) {
 	t.Run("valid dsn opens a connection", func(t *testing.T) {
 		m, err := conn.Open(context.Background(), testDSN(t))
 		require.NoError(t, err)
-		defer m.Close(context.Background())
+		require.NoError(t, m.Close(context.Background()))
 	})
 }
 
 func TestManager_Query_SetsReadOnlyAndTimeout(t *testing.T) {
 	m, err := conn.Open(context.Background(), testDSN(t))
 	require.NoError(t, err)
-	defer m.Close(context.Background())
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
 	err = m.Query(context.Background(), func(ctx context.Context, tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `INSERT INTO app.widgets (name) VALUES ('should not be allowed')`)
@@ -52,7 +52,7 @@ func TestManager_Query_SetsReadOnlyAndTimeout(t *testing.T) {
 func TestManager_Query_AlwaysRollsBack(t *testing.T) {
 	m, err := conn.Open(context.Background(), testDSN(t))
 	require.NoError(t, err)
-	defer m.Close(context.Background())
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
 	var count int
 	err = m.Query(context.Background(), func(ctx context.Context, tx pgx.Tx) error {

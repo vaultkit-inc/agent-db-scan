@@ -26,7 +26,7 @@ type Options struct {
 
 // Scan opens dsn, introspects it under a single read-only transaction, and
 // returns the resulting Report.
-func Scan(ctx context.Context, dsn string, opts Options) (*domain.Report, error) {
+func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, err error) {
 	var connOpts []conn.Option
 	if opts.StatementTimeout > 0 {
 		connOpts = append(connOpts, conn.WithStatementTimeout(opts.StatementTimeout))
@@ -36,7 +36,11 @@ func Scan(ctx context.Context, dsn string, opts Options) (*domain.Report, error)
 	if err != nil {
 		return nil, err
 	}
-	defer mgr.Close(ctx)
+	defer func() {
+		if cerr := mgr.Close(ctx); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	scannedAt := time.Now().UTC()
 
