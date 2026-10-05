@@ -84,7 +84,9 @@ func (m *Manager) Query(ctx context.Context, fn func(ctx context.Context, tx pgx
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	// Never committed, so Rollback is the normal exit path; its error carries
+	// nothing actionable for a read-only transaction.
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	_, err = tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = %d", m.statementTimeout.Milliseconds()))
 	if err != nil {

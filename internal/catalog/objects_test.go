@@ -36,7 +36,7 @@ func listObjects(t *testing.T, schemaFilter string, includeSystem bool) []domain
 
 	m, err := conn.Open(context.Background(), testDSN(t))
 	require.NoError(t, err)
-	defer m.Close(context.Background())
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
 	var objects []domain.DBObject
 	err = m.Query(context.Background(), func(ctx context.Context, tx pgx.Tx) error {

@@ -35,7 +35,7 @@ func listRoles(t *testing.T) []domain.Role {
 
 	m, err := conn.Open(context.Background(), testDSN(t))
 	require.NoError(t, err)
-	defer m.Close(context.Background())
+	t.Cleanup(func() { _ = m.Close(context.Background()) })
 
 	var roles []domain.Role
 	err = m.Query(context.Background(), func(ctx context.Context, tx pgx.Tx) error {

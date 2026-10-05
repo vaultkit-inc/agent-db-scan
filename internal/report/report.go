@@ -522,18 +522,22 @@ func renderFutureAccess(
 
 	for groupIndex, key := range order {
 		if key.schema == "" {
-			fmt.Fprintf(
+			if _, err := fmt.Fprintf(
 				w,
 				"  New objects created by %s database-wide:\n",
 				key.creator,
-			)
+			); err != nil {
+				return err
+			}
 		} else {
-			fmt.Fprintf(
+			if _, err := fmt.Fprintf(
 				w,
 				"  New objects created by %s in %s:\n",
 				key.creator,
 				key.schema,
-			)
+			); err != nil {
+				return err
+			}
 		}
 
 		entries := groups[key]
