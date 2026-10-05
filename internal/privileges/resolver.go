@@ -22,6 +22,7 @@ type Input struct {
 	Objects        []domain.DBObject
 	DefaultACLs    []catalog.DefaultACLEntry
 	RLS            []domain.RLSInfo
+	SecurityDefinerFunctions []domain.SecurityDefinerFunction
 }
 
 // Resolver turns an Input into a slice of domain.EffectiveAccess.
@@ -189,6 +190,87 @@ func (r *Resolver) ResolveFuture(ctx context.Context, in Input) ([]domain.Forwar
 	}
 
 	return results, nil
+}
+
+// ResolveIndirectWritePaths finds SECURITY DEFINER functions the login can
+// execute. Each one runs with its owner's privileges, so it's a potential
+// write path even when the login's own table privileges are read-only.
+//
+// Skipped:
+//   - a superuser login: it already has every privilege, so nothing is indirect
+//   - functions the login owns or inherits ownership of: executing them grants
+//     nothing the login doesn't already hold
+func (r *Resolver) ResolveIndirectWritePaths(ctx context.Context, in Input) ([]domain.IndirectWritePath, error) {
+	if in.IsSuperuser {
+		return nil, nil
+	}
+
+	effectiveRoleSet := make(map[string]bool, len(in.EffectiveRoles))
+	for _, role := range in.EffectiveRoles {
+		effectiveRoleSet[role] = true
+	}
+
+	var results []domain.IndirectWritePath
+
+	for _, fn := range in.SecurityDefinerFunctions {
+		owner := fn.Object.Owner
+		if owner == in.Login || effectiveRoleSet[owner] {
+			continue // the login already holds the owner's privileges
+		}
+
+		var sources []domain.AccessSource
+		for _, entry := range fn.Object.ACL {
+			if !containsPrivilege(entry.Privileges, "EXECUTE") {
+				continue
+			}
+			kind, matched := classifyGrantee(entry.Grantee, in.Login, effectiveRoleSet)
+			if !matched {
+				continue
+			}
+			role := entry.Grantee
+			if kind == "public" {
+				role = "PUBLIC"
+			}
+			sources = append(sources, domain.AccessSource{
+				Role:       role,
+				Privileges: []string{"EXECUTE"},
+				Kind:       kind,
+			})
+		}
+
+		if len(sources) == 0 {
+			continue // the login can't execute this function
+		}
+
+		results = append(results, domain.IndirectWritePath{
+			Function: fn,
+			Sources:  sources,
+			Level:    indirectWriteLevel(fn),
+		})
+	}
+
+	return results, nil
+}
+
+// indirectWriteLevel rates a SECURITY DEFINER function the login can execute.
+// A superuser-owned one effectively lets the login run code as a superuser.
+// Otherwise it's Write, matching accessLevelFor's conservative EXECUTE rule:
+// we don't know what the function does, so we assume it can change data.
+func indirectWriteLevel(fn domain.SecurityDefinerFunction) domain.AccessLevel {
+	if fn.OwnerSuperuser {
+		return domain.AccessSuperuserEquivalent
+	}
+	return domain.AccessWrite
+}
+
+// containsPrivilege reports whether privs includes p.
+func containsPrivilege(privs []string, p string) bool {
+	for _, x := range privs {
+		if x == p {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveSuperuser short-circuits: a superuser bypasses every ACL and RLS

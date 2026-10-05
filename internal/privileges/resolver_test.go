@@ -372,3 +372,72 @@ func TestResolver_ResolveFuture(t *testing.T) {
 		assert.Nil(t, got)
 	})
 }
+
+func TestResolveIndirectWritePaths(t *testing.T) {
+	publicExecute := []domain.ACLEntry{{Grantee: "", Privileges: []string{"EXECUTE"}}}
+
+	purge := domain.SecurityDefinerFunction{
+		Object:         domain.DBObject{Schema: "app", Name: "purge_widgets", Kind: domain.KindFunction, Owner: "postgres", ACL: publicExecute},
+		Signature:      "app.purge_widgets()",
+		OwnerSuperuser: true,
+	}
+	rotate := domain.SecurityDefinerFunction{
+		Object: domain.DBObject{Schema: "app", Name: "rotate_secret", Kind: domain.KindFunction, Owner: "app_admin",
+			ACL: []domain.ACLEntry{{Grantee: "app_reader", Privileges: []string{"EXECUTE"}}}},
+		Signature:        "app.rotate_secret()",
+		PinnedSearchPath: true,
+	}
+
+	resolve := func(t *testing.T, in privileges.Input) []domain.IndirectWritePath {
+		t.Helper()
+		got, err := privileges.NewResolver().ResolveIndirectWritePaths(context.Background(), in)
+		require.NoError(t, err)
+		return got
+	}
+
+	t.Run("a PUBLIC-executable superuser-owned function is superuser-equivalent", func(t *testing.T) {
+		got := resolve(t, privileges.Input{
+			Login: "agent", EffectiveRoles: []string{"agent"},
+			SecurityDefinerFunctions: []domain.SecurityDefinerFunction{purge},
+		})
+		require.Len(t, got, 1)
+		assert.Equal(t, domain.AccessSuperuserEquivalent, got[0].Level)
+		assert.Equal(t, "public", got[0].Sources[0].Kind)
+		assert.Equal(t, "PUBLIC", got[0].Sources[0].Role)
+	})
+
+	t.Run("EXECUTE through an inherited role is reported as inherited", func(t *testing.T) {
+		got := resolve(t, privileges.Input{
+			Login: "agent", EffectiveRoles: []string{"agent", "app_reader"},
+			SecurityDefinerFunctions: []domain.SecurityDefinerFunction{rotate},
+		})
+		require.Len(t, got, 1)
+		assert.Equal(t, domain.AccessWrite, got[0].Level)
+		assert.Equal(t, "inherited", got[0].Sources[0].Kind)
+		assert.Equal(t, "app_reader", got[0].Sources[0].Role)
+	})
+
+	t.Run("a function the login cannot execute is omitted", func(t *testing.T) {
+		got := resolve(t, privileges.Input{
+			Login: "agent", EffectiveRoles: []string{"agent"}, // not a member of app_reader
+			SecurityDefinerFunctions: []domain.SecurityDefinerFunction{rotate},
+		})
+		assert.Empty(t, got)
+	})
+
+	t.Run("a function the login owns, directly or by inheritance, is omitted", func(t *testing.T) {
+		got := resolve(t, privileges.Input{
+			Login: "agent", EffectiveRoles: []string{"agent", "app_admin"},
+			SecurityDefinerFunctions: []domain.SecurityDefinerFunction{rotate},
+		})
+		assert.Empty(t, got)
+	})
+
+	t.Run("a superuser login gets nothing, since nothing is indirect for it", func(t *testing.T) {
+		got := resolve(t, privileges.Input{
+			Login: "admin", IsSuperuser: true, EffectiveRoles: []string{"admin"},
+			SecurityDefinerFunctions: []domain.SecurityDefinerFunction{purge, rotate},
+		})
+		assert.Nil(t, got)
+	})
+}
