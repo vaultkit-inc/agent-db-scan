@@ -58,8 +58,9 @@ func renderJSON(w io.Writer, rep *domain.Report) error {
 //  1. Who was scanned?
 //  2. What can the login do?
 //  3. Which objects can it access?
-//  4. What access may apply to future objects?
-//  5. Are there any existing heuristic warnings?
+//  4. Which functions give indirect write access?
+//  5. What access may apply to future objects?
+//  6. Are there any existing heuristic warnings?
 //
 // It deliberately does not assign HIGH/MEDIUM/LOW severity. Risk
 // classification belongs in a dedicated findings layer, not the renderer.
@@ -78,6 +79,10 @@ func renderTable(
 	}
 
 	if err := renderCurrentAccess(w, rep, useColor, verbose); err != nil {
+		return err
+	}
+
+	if err := renderIndirectWritePaths(w, rep, useColor, verbose); err != nil {
 		return err
 	}
 
@@ -130,17 +135,18 @@ func renderHeader(w io.Writer, rep *domain.Report) error {
 //
 // These are capabilities, not security findings.
 type summary struct {
-	objects      int
-	tables       int
-	views        int
-	sequences    int
-	functions    int
-	owned        int
-	canRead      bool
-	canWrite     bool
-	hasAdmin     bool
-	isSuperuser  bool
-	futureAccess int
+	objects      	int
+	tables       	int
+	views        	int
+	sequences    	int
+	functions    	int
+	owned        	int
+	canRead      	bool
+	canWrite     	bool
+	hasAdmin     	bool
+	isSuperuser  	bool
+	futureAccess 	int
+	indirectWrites  int
 }
 
 // buildSummary derives the information shown in SUMMARY.
@@ -154,6 +160,7 @@ func buildSummary(rep *domain.Report) summary {
 	s := summary{
 		objects:      len(rep.Access),
 		futureAccess: len(rep.FutureAccess),
+		indirectWrites: len(rep.IndirectWritePaths),
 	}
 
 	for _, access := range rep.Access {
@@ -267,6 +274,14 @@ func renderSummary(
 		"  Can write\t%s\n",
 		yesNo(s.canWrite, useColor),
 	)
+
+	if s.indirectWrites > 0 {
+		fmt.Fprintf(
+			tw,
+			"  Indirect writes\t%d functions (see INDIRECT WRITE PATHS)\n",
+			s.indirectWrites,
+		)
+	}
 
 	fmt.Fprintf(
 		tw,
@@ -456,6 +471,105 @@ func qualifiedObjectName(
 	}
 
 	return access.Object.Schema + "." + access.Object.Name
+}
+
+// renderIndirectWritePaths lists SECURITY DEFINER functions the login can
+// execute. Table privileges alone can make a login look read-only while one
+// of these lets it write with its owner's privileges, so they get their own
+// section. Skipped entirely when there are none, like FUTURE ACCESS.
+func renderIndirectWritePaths(
+	w io.Writer,
+	rep *domain.Report,
+	useColor bool,
+	verbose bool,
+) error {
+	if len(rep.IndirectWritePaths) == 0 {
+		return nil
+	}
+
+	if _, err := fmt.Fprintln(w, "INDIRECT WRITE PATHS"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w, "  SECURITY DEFINER functions this login can execute. Each one runs with its owner's privileges."); err != nil {
+		return err
+	}
+
+	// Work on a copy so rendering never mutates the domain report.
+	sorted := make([]domain.IndirectWritePath, len(rep.IndirectWritePaths))
+	copy(sorted, rep.IndirectWritePaths)
+
+	// Most dangerous first, then by name for deterministic output.
+	sort.SliceStable(sorted, func(i, j int) bool {
+		leftRank := domain.AccessLevelRank[sorted[i].Level]
+		rightRank := domain.AccessLevelRank[sorted[j].Level]
+		if leftRank != rightRank {
+			return leftRank > rightRank
+		}
+		return functionName(sorted[i].Function) < functionName(sorted[j].Function)
+	})
+
+	levelWidth := len("LEVEL")
+	for _, path := range sorted {
+		if n := len(path.Level); n > levelWidth {
+			levelWidth = n
+		}
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 2, 2, ' ', 0)
+
+	fmt.Fprintf(
+		tw,
+		"  FUNCTION\tOWNER\t%s\tVIA\tNOTE\n",
+		colorLevel(fmt.Sprintf("%*s", levelWidth, "LEVEL"), "", useColor),
+	)
+
+	for _, path := range sorted {
+		via := formatSources(path.Sources)
+		if verbose {
+			via = formatSourcesFull(path.Sources)
+		}
+
+		fmt.Fprintf(
+			tw,
+			"  %s\t%s\t%s\t%s\t%s\n",
+			functionName(path.Function),
+			path.Function.Object.Owner,
+			colorLevel(fmt.Sprintf("%*s", levelWidth, path.Level), path.Level, useColor),
+			via,
+			functionNote(path.Function),
+		)
+	}
+
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintln(w)
+	return err
+}
+
+// functionName returns the function's signature, schema-qualified.
+// Postgres omits the schema from regprocedure output when the schema is on
+// the search_path (e.g. "reset_counter()" in public), so add it back for
+// consistency with the schema.object names in CURRENT ACCESS.
+func functionName(fn domain.SecurityDefinerFunction) string {
+	prefix := fn.Object.Schema + "."
+	if fn.Object.Schema == "" || strings.HasPrefix(fn.Signature, prefix) {
+		return fn.Signature
+	}
+	return prefix + fn.Signature
+}
+
+// functionNote adds short facts worth a reviewer's attention.
+func functionNote(fn domain.SecurityDefinerFunction) string {
+	var notes []string
+	if fn.IsProcedure {
+		notes = append(notes, "procedure")
+	}
+	if !fn.PinnedSearchPath {
+		notes = append(notes, "search_path not pinned")
+	}
+	return strings.Join(notes, "; ")
 }
 
 // renderFutureAccess presents PostgreSQL default privileges in terms of

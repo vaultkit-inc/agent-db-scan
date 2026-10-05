@@ -117,3 +117,9 @@ GRANT EXECUTE ON FUNCTION app.rotate_secret() TO app_reader;
 CREATE FUNCTION app.widget_count() RETURNS bigint
 LANGUAGE sql
 AS $$ SELECT count(*) FROM app.widgets $$;
+
+-- A login that looks read-only (no table write grants) but can execute
+-- SECURITY DEFINER functions: one via PUBLIC, one via app_reader.
+CREATE ROLE agent_ro LOGIN PASSWORD 'agent_ro';
+GRANT app_reader TO agent_ro;
+GRANT USAGE ON SCHEMA app TO agent_ro;
