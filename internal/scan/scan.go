@@ -54,6 +54,7 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 		objects     []domain.DBObject
 		defaultACLs []catalog.DefaultACLEntry
 		rlsInfo     []domain.RLSInfo
+		sdFunctions []domain.SecurityDefinerFunction
 	)
 
 	err = mgr.Query(ctx, func(ctx context.Context, tx pgx.Tx) error {
@@ -75,6 +76,12 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 		}
 
 		rlsInfo, qerr = catalog.NewRLSReader(tx).ListRLS(ctx)
+		if qerr != nil {
+			return qerr
+		}
+		
+		sdFunctions, qerr = catalog.NewFunctionReader(tx).
+			ListSecurityDefinerFunctions(ctx, opts.SchemaFilter, opts.IncludeSystemSchemas)
 		return qerr
 	})
 	if err != nil {
@@ -102,6 +109,7 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 		Objects:        objects,
 		DefaultACLs:    defaultACLs,
 		RLS:            rlsInfo,
+		SecurityDefinerFunctions: sdFunctions,
 	}
 
 	resolver := privileges.NewResolver()
@@ -116,6 +124,11 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 		return nil, err
 	}
 
+	indirectWritePaths, err := resolver.ResolveIndirectWritePaths(ctx, input) // new
+	if err != nil {
+		return nil, err
+	}
+
 	access, warnings, err := classify.NewClassifier().Classify(access, login)
 	if err != nil {
 		return nil, err
@@ -126,6 +139,7 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 		ScannedAt:    scannedAt,
 		Access:       access,
 		FutureAccess: futureAccess,
+		IndirectWritePaths: indirectWritePaths,
 		Warnings:     warnings,
 	}, nil
 }
