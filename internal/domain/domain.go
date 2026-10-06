@@ -136,12 +136,12 @@ type ForwardLookingAccess struct {
 
 // Report is the top-level scan result.
 type Report struct {
-	Login        string
-	ScannedAt    time.Time
-	Access       []EffectiveAccess
-	FutureAccess []ForwardLookingAccess
+	Login              string
+	ScannedAt          time.Time
+	Access             []EffectiveAccess
+	FutureAccess       []ForwardLookingAccess
 	IndirectWritePaths []IndirectWritePath
-	Warnings     []string
+	Warnings           []string
 }
 
 // SecurityDefinerFunction is a function or procedure marked SECURITY DEFINER:

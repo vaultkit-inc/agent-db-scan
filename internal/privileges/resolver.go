@@ -16,12 +16,12 @@ import (
 // Input bundles everything the resolver needs. It intentionally takes
 // already-read data rather than an Executor — the resolver does no I/O.
 type Input struct {
-	Login          string
-	IsSuperuser    bool     // true if Login (or any role it inherits) is a Postgres superuser
-	EffectiveRoles []string // from roles.Graph.Resolve(Login); includes Login itself
-	Objects        []domain.DBObject
-	DefaultACLs    []catalog.DefaultACLEntry
-	RLS            []domain.RLSInfo
+	Login                    string
+	IsSuperuser              bool     // true if Login (or any role it inherits) is a Postgres superuser
+	EffectiveRoles           []string // from roles.Graph.Resolve(Login); includes Login itself
+	Objects                  []domain.DBObject
+	DefaultACLs              []catalog.DefaultACLEntry
+	RLS                      []domain.RLSInfo
 	SecurityDefinerFunctions []domain.SecurityDefinerFunction
 }
 

@@ -135,18 +135,18 @@ func renderHeader(w io.Writer, rep *domain.Report) error {
 //
 // These are capabilities, not security findings.
 type summary struct {
-	objects      	int
-	tables       	int
-	views        	int
-	sequences    	int
-	functions    	int
-	owned        	int
-	canRead      	bool
-	canWrite     	bool
-	hasAdmin     	bool
-	isSuperuser  	bool
-	futureAccess 	int
-	indirectWrites  int
+	objects        int
+	tables         int
+	views          int
+	sequences      int
+	functions      int
+	owned          int
+	canRead        bool
+	canWrite       bool
+	hasAdmin       bool
+	isSuperuser    bool
+	futureAccess   int
+	indirectWrites int
 }
 
 // buildSummary derives the information shown in SUMMARY.
@@ -158,8 +158,8 @@ type summary struct {
 // that the login can modify table data.
 func buildSummary(rep *domain.Report) summary {
 	s := summary{
-		objects:      len(rep.Access),
-		futureAccess: len(rep.FutureAccess),
+		objects:        len(rep.Access),
+		futureAccess:   len(rep.FutureAccess),
 		indirectWrites: len(rep.IndirectWritePaths),
 	}
 

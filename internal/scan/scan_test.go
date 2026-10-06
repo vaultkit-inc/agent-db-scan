@@ -136,7 +136,7 @@ func TestScan(t *testing.T) {
 		}
 	})
 
-		t.Run("a login with no table writes still reports indirect write paths", func(t *testing.T) {
+	t.Run("a login with no table writes still reports indirect write paths", func(t *testing.T) {
 		dsn := roleDSN(t, "AGENT_DB_SCAN_TEST_AGENT_RO_DSN", "agent_ro")
 		rep, err := scan.Scan(context.Background(), dsn, scan.Options{SchemaFilter: "app"})
 		require.NoError(t, err)

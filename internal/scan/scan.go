@@ -79,7 +79,7 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 		if qerr != nil {
 			return qerr
 		}
-		
+
 		sdFunctions, qerr = catalog.NewFunctionReader(tx).
 			ListSecurityDefinerFunctions(ctx, opts.SchemaFilter, opts.IncludeSystemSchemas)
 		return qerr
@@ -103,12 +103,12 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 	}
 
 	input := privileges.Input{
-		Login:          login,
-		IsSuperuser:    isSuperuser,
-		EffectiveRoles: effectiveRoles,
-		Objects:        objects,
-		DefaultACLs:    defaultACLs,
-		RLS:            rlsInfo,
+		Login:                    login,
+		IsSuperuser:              isSuperuser,
+		EffectiveRoles:           effectiveRoles,
+		Objects:                  objects,
+		DefaultACLs:              defaultACLs,
+		RLS:                      rlsInfo,
 		SecurityDefinerFunctions: sdFunctions,
 	}
 
@@ -135,11 +135,11 @@ func Scan(ctx context.Context, dsn string, opts Options) (rep *domain.Report, er
 	}
 
 	return &domain.Report{
-		Login:        login,
-		ScannedAt:    scannedAt,
-		Access:       access,
-		FutureAccess: futureAccess,
+		Login:              login,
+		ScannedAt:          scannedAt,
+		Access:             access,
+		FutureAccess:       futureAccess,
 		IndirectWritePaths: indirectWritePaths,
-		Warnings:     warnings,
+		Warnings:           warnings,
 	}, nil
 }
