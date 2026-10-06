@@ -55,6 +55,15 @@ func findAccess(access []domain.EffectiveAccess, schema, name string) (domain.Ef
 	return domain.EffectiveAccess{}, false
 }
 
+func findIndirect(paths []domain.IndirectWritePath, schema, name string) (domain.IndirectWritePath, bool) {
+	for _, p := range paths {
+		if p.Function.Object.Schema == schema && p.Function.Object.Name == name {
+			return p, true
+		}
+	}
+	return domain.IndirectWritePath{}, false
+}
+
 func TestScan(t *testing.T) {
 	t.Run("end-to-end scan against docker-compose fixture returns a populated Report", func(t *testing.T) {
 		rep, err := scan.Scan(context.Background(), testDSN(t), scan.Options{})
@@ -63,6 +72,7 @@ func TestScan(t *testing.T) {
 
 		assert.Equal(t, "agent_db_scan", rep.Login)
 		assert.NotEmpty(t, rep.Access, "scanning as the superuser should still return access entries for every object")
+		assert.Empty(t, rep.IndirectWritePaths, "a superuser has no *indirect* access: it already has everything")
 	})
 
 	t.Run("schema filter restricts Access to that schema's objects", func(t *testing.T) {
@@ -124,5 +134,37 @@ func TestScan(t *testing.T) {
 			}
 			assert.NotEqual(t, domain.AccessAdmin, secrets.Level)
 		}
+	})
+
+	t.Run("a login with no table writes still reports indirect write paths", func(t *testing.T) {
+		dsn := roleDSN(t, "AGENT_DB_SCAN_TEST_AGENT_RO_DSN", "agent_ro")
+		rep, err := scan.Scan(context.Background(), dsn, scan.Options{SchemaFilter: "app"})
+		require.NoError(t, err)
+
+		assert.Equal(t, "agent_ro", rep.Login)
+
+		// The premise: judged by table privileges alone, agent_ro is read-only.
+		for _, a := range rep.Access {
+			assert.LessOrEqual(t,
+				domain.AccessLevelRank[a.Level], domain.AccessLevelRank[domain.AccessRead],
+				"agent_ro should have no direct write access, but %s.%s is %s",
+				a.Object.Schema, a.Object.Name, a.Level,
+			)
+		}
+
+		// The finding: it can still write through SECURITY DEFINER functions.
+		require.Len(t, rep.IndirectWritePaths, 2)
+
+		purge, ok := findIndirect(rep.IndirectWritePaths, "app", "purge_widgets")
+		require.True(t, ok, "purge_widgets is executable via the default PUBLIC grant")
+		assert.Equal(t, domain.AccessSuperuserEquivalent, purge.Level)
+		assert.Equal(t, "public", purge.Sources[0].Kind)
+		assert.False(t, purge.Function.PinnedSearchPath)
+
+		rotate, ok := findIndirect(rep.IndirectWritePaths, "app", "rotate_secret")
+		require.True(t, ok, "rotate_secret is executable via inherited app_reader")
+		assert.Equal(t, domain.AccessWrite, rotate.Level)
+		assert.Equal(t, "inherited", rotate.Sources[0].Kind)
+		assert.Equal(t, "app_reader", rotate.Sources[0].Role)
 	})
 }

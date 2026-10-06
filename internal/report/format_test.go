@@ -69,3 +69,60 @@ func TestColorEnabled(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	assert.False(t, colorEnabled(&bytes.Buffer{}))
 }
+
+func TestRenderIndirectWritePaths(t *testing.T) {
+	publicSrc := []domain.AccessSource{{Role: "PUBLIC", Kind: "public", Privileges: []string{"EXECUTE"}}}
+	inheritedSrc := []domain.AccessSource{{Role: "app_reader", Kind: "inherited", Privileges: []string{"EXECUTE"}}}
+
+	rep := &domain.Report{IndirectWritePaths: []domain.IndirectWritePath{
+		{
+			Function: domain.SecurityDefinerFunction{
+				Object:           domain.DBObject{Schema: "app", Name: "rotate_secret", Owner: "app_admin"},
+				Signature:        "app.rotate_secret()",
+				PinnedSearchPath: true,
+			},
+			Sources: inheritedSrc,
+			Level:   domain.AccessWrite,
+		},
+		{
+			Function: domain.SecurityDefinerFunction{
+				Object:         domain.DBObject{Schema: "public", Name: "reset_counter", Owner: "postgres"},
+				Signature:      "reset_counter()", // regprocedure omits public
+				OwnerSuperuser: true,
+			},
+			Sources: publicSrc,
+			Level:   domain.AccessSuperuserEquivalent,
+		},
+	}}
+
+	t.Run("section is omitted when there are no indirect write paths", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, renderIndirectWritePaths(&buf, &domain.Report{}, false, false))
+		assert.Empty(t, buf.String())
+	})
+
+	t.Run("lists functions, most dangerous first, with source and notes", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, renderIndirectWritePaths(&buf, rep, false, false))
+		out := buf.String()
+
+		assert.Contains(t, out, "INDIRECT WRITE PATHS")
+		assert.Contains(t, out, "public.reset_counter()", "schema is added back when regprocedure omits it")
+		assert.Contains(t, out, "PUBLIC (public)")
+		assert.Contains(t, out, "app_reader (inherited)")
+		assert.Contains(t, out, "search_path not pinned")
+
+		assert.Less(t,
+			strings.Index(out, "reset_counter"),
+			strings.Index(out, "rotate_secret"),
+			"superuser_equivalent should sort above write",
+		)
+	})
+
+	t.Run("summary flags indirect writes next to Can write", func(t *testing.T) {
+		var buf bytes.Buffer
+		require.NoError(t, renderSummary(&buf, rep, false))
+		assert.Contains(t, buf.String(), "Indirect writes")
+		assert.Contains(t, buf.String(), "2 functions")
+	})
+}

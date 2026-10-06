@@ -136,9 +136,30 @@ type ForwardLookingAccess struct {
 
 // Report is the top-level scan result.
 type Report struct {
-	Login        string
-	ScannedAt    time.Time
-	Access       []EffectiveAccess
-	FutureAccess []ForwardLookingAccess
-	Warnings     []string
+	Login              string
+	ScannedAt          time.Time
+	Access             []EffectiveAccess
+	FutureAccess       []ForwardLookingAccess
+	IndirectWritePaths []IndirectWritePath
+	Warnings           []string
+}
+
+// SecurityDefinerFunction is a function or procedure marked SECURITY DEFINER:
+// it runs with its owner's privileges, not the caller's. If the scanned login
+// can execute one owned by a more privileged role, that's a potential
+// indirect write path, even when the login has no table write privileges.
+type SecurityDefinerFunction struct {
+	Object           DBObject // Kind is KindFunction; Owner and ACL come from pg_proc
+	Signature        string   // e.g. "public.reset_counter()"; functions can share a name, so we need the arguments too
+	IsProcedure      bool     // true for procedures (called with CALL), false for functions
+	OwnerSuperuser   bool     // the owner is a superuser, the worst case
+	PinnedSearchPath bool     // the function sets its own search_path, which protects it from hijacking
+}
+
+// IndirectWritePath is a SecurityDefinerFunction the scanned login can
+// actually execute, plus how it got that ability.
+type IndirectWritePath struct {
+	Function SecurityDefinerFunction
+	Sources  []AccessSource // how the login gets EXECUTE: direct, inherited or PUBLIC
+	Level    AccessLevel    // how dangerous the classifier thinks this is
 }
